@@ -9,7 +9,7 @@
 ![Score](https://img.shields.io/badge/Test%20R%C2%B2-0.8239-brightgreen)
 ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL%20%2B%20SQLAlchemy-blue)
 
-A full-stack, machine learning-powered prediction platform and pricing engine that forecasts 15-minute interval ride-hailing demand across NYC's 263 TLC zones, featuring route-aware graph routing via OSMnx, dynamic three-policy surge pricing, and SHAP-based model explainability.
+A full-stack, machine learning-powered prediction platform and pricing engine that forecasts 15-minute interval ride-hailing demand across NYC's 263 TLC zones, featuring a Haversine-based ETA engine with borough-aware speed modelling and dynamic traffic multipliers, three-policy surge pricing, and SHAP-based model explainability.
 
 ---
 
@@ -37,7 +37,7 @@ A full-stack, machine learning-powered prediction platform and pricing engine th
 **UrbanFlow** is a production-scale ride demand forecasting and pricing intelligence platform. At its core, the project runs a stacked machine learning ensemble of **XGBoost** and **LightGBM** trained on over **65 million raw Uber/Lyft (HVFHV) trip records** (aggregated to ~2.25M time-slot zones). It predicts localized demand for 15-minute intervals across NYC's 263 taxi zones.
 
 The application serves these predictions via an asynchronous **FastAPI** backend, persisted in a **PostgreSQL** database, and visualizes the results on a modern, dark-themed **React** dashboard. In addition to demand prediction, UrbanFlow features:
-* **Route-Aware ETA calculations** by traversing physical road graphs using **OSMnx** and **NetworkX**.
+* **Haversine-Based ETA Engine** that computes great-circle distance between NYC zone centroids, applies a 1.35× road-tortuosity correction factor, and adjusts speed based on borough type (Manhattan: 11 mph, cross-borough: 15 mph, default: 18 mph).
 * **A Three-Policy Pricing Engine** that simulates and compares flat, reactive, and predictive (anticipatory) surge multipliers.
 * **SHAP Explainability** to make black-box ML predictions transparent to users.
 
@@ -48,9 +48,9 @@ The application serves these predictions via an asynchronous **FastAPI** backend
 Modern ride-hailing services (like Uber and Lyft) face extreme spatial and temporal volatility. In NYC alone, millions of rides occur daily, and demand changes rapidly by the minute. Traditional ride-hailing networks suffer from two main gaps:
 1. **Inefficient Distribution:** Drivers are often poorly distributed because dispatch systems cannot anticipate demand spikes 15–30 minutes in advance, resulting in high passenger wait times.
 2. **Opacity:** Surge pricing algorithms are "black boxes"—riders and drivers see a multiplier but never understand the underlying features pushing prices up.
-3. **Inaccurate ETAs:** Standard routing models estimate travel times based on straight-line distances (Haversine calculations) rather than traversing actual road networks.
+3. **Inaccurate ETAs:** Straight-line distances significantly underestimate actual road travel time in a dense urban grid like NYC.
 
-UrbanFlow solves these issues by predicting fine-grained demand beforehand, serving route-aware road graph ETAs, and breaking down pricing factors transparently using SHAP values.
+UrbanFlow solves these issues by predicting fine-grained demand beforehand, serving borough-aware Haversine ETA estimates with dynamic traffic multipliers, and breaking down pricing factors transparently using SHAP values.
 
 ---
 
@@ -69,8 +69,8 @@ UrbanFlow solves these issues by predicting fine-grained demand beforehand, serv
 * 📈 **Advanced Blended ML Ensemble**
   Combines XGBoost and LightGBM to yield a test $R^2$ of **0.8239**. Features are engineered using GroupKFold validation to guarantee no spatial leakage across training splits.
 
-* 📍 **Route-Aware road Graph ETA**
-  Computes precise route travel times by snapping pickup and dropoff points to NYC's physical OpenStreetMap network nodes, calculating the shortest route via Dijkstra's algorithm.
+* 📍 **Borough-Aware Haversine ETA Engine**
+  Estimates inter-zone travel time using the Haversine great-circle formula with a 1.35× tortuosity correction to account for NYC's road grid. Applies dynamic traffic multipliers — rush-hour (+35%), weekend nightlife (+20%), off-peak (−10%) — and borough-specific speed profiles (Manhattan: 11 mph, cross-borough: 15 mph, outer: 18 mph).
 
 * 💸 **Dynamic Surge Pricing & Policy Comparison**
   Applies surge multipliers based on forecasted demand, time-of-day rush hours, nightlife factors, and weekends. Compares flat, reactive, and anticipatory predictive policies in real time.
@@ -117,8 +117,8 @@ UrbanFlow solves these issues by predicting fine-grained demand beforehand, serv
 │              ▼                      │ pyarrow / pandas│     │
 │      ┌───────────────┐              │ preprocessed data│    │
 │      │  ETAService   │              └─────────────────┘     │
-│      │ - OSMnx Graph │                                      │
-│      │ - NetworkX    │                                      │
+│      │ - Haversine   │                                      │
+│      │ - Traffic Mul │                                      │
 │      └───────┬───────┘                                      │
 └──────────────┼──────────────────────────────────────────────┘
                │ SQLAlchemy ORM (asyncpg)
@@ -142,7 +142,7 @@ For every inference cycle, the backend performs the following pipeline:
    * **Cyclical Encodings:** Sine and cosine representations of hour, weekday, and time slot.
 2. **Model Evaluation:** Feeds the feature vector into the serialized XGBoost and LightGBM models to output the predicted demand score.
 3. **Surge Multiplier Calculation:** Evaluates the predicted demand against active pricing policies.
-4. **ETA & Route Generation:** Snap coordinates to the cached OSMnx road graph to calculate path travel distance and travel time. Snaps back to zone centroid metrics if the road network is unavailable.
+4. **ETA Calculation:** Computes Haversine great-circle distance between pickup and dropoff zone centroids, applies a 1.35× road-tortuosity factor, selects a borough-aware freeflow speed, and adjusts for time-of-day traffic conditions via dynamic multipliers.
 5. **Database Logging & Return:** Async log statistics written to PostgreSQL, returning the results to the React dashboard.
 
 ---
@@ -196,9 +196,16 @@ The backend contains a `PricingService` comparing three active business logic pr
    $$\text{Surge} = 1.0 + (\text{predicted\_demand} - 0.5) \times 4.0 \quad (\text{capped at } 3.0\text{x})$$
 3. **Predictive Policy:** Anticipatory pricing. It calculates the reactive surge rate, then increases the multiplier by `+0.15x` if the query falls within the hour leading up to standard morning/evening rush hours (e.g., between 6:00 AM and 7:00 AM, or 4:00 PM and 5:00 PM), prompting drivers to navigate to high-demand zones before the rush begins.
 
-### ETA Routing Engine
-* **Graph Mode:** Loads a cached `.graphml` file containing NYC's physical road network nodes and edges built using **OSMnx**. Snap coordinate locations to the closest network node and invoke `networkx.shortest_path` using the `travel_time` edge weight.
-* **Fallback Mode:** In case of missing local graphs, calculates Haversine great-circle distance between zone centroids, applying a time-of-day traffic speed multiplier to approximate travel duration.
+### ETA Engine
+The ETA engine computes inter-zone travel time estimates using a multi-step calculation:
+* **Distance:** Haversine great-circle formula between zone centroids, scaled by a **1.35× road-tortuosity correction** to approximate actual road distance in NYC's grid layout.
+* **Speed:** Borough-aware freeflow speed — Manhattan-only trips use **11 mph**, cross-borough trips use **15 mph**, and all other trips use **18 mph**.
+* **Traffic Multipliers:** Time-of-day adjustments stacked on top of base ETA:
+  * Rush hours (7–9 AM, 4–7 PM): **+35%**
+  * Weekend days: **+10%**
+  * Weekend nightlife (Fri–Sat, 8 PM–2 AM): **+20%**
+  * Off-peak hours (12 AM–5 AM): **−10%**
+  * Peak sub-slot (30–45 min mark during rush): **+5%**
 
 ---
 
@@ -248,7 +255,7 @@ All endpoints run on `http://localhost:8000` by default. Complete Swagger API do
 * **XGBoost & LightGBM** - Ensemble models.
 * **Joblib** - Serializing and loading models.
 * **SQLAlchemy & asyncpg** - Asynchronous database interaction.
-* **OSMnx & NetworkX** - Graph routing and shortest path calculation.
+* **Math (stdlib)** - Haversine great-circle distance for zone-level ETA estimation.
 * **SHAP** - Local model explainability.
 
 ### Frontend
@@ -281,7 +288,7 @@ urbanflow/
 │   ├── lightgbm_model.py      # LightGBM training configuration
 │   ├── ensemble.py            # Stacking and blending logic
 │   ├── explainer.py           # SHAP analysis and explanations
-│   ├── eta_model.py           # Graph routing travel time calculations
+│   ├── eta_model.py           # Haversine ETA engine with borough-aware speed & traffic multipliers
 │   └── train.py               # ML training pipeline execution script
 │
 ├── api/
@@ -390,7 +397,7 @@ SECRET_KEY=urbanflow-dev-secret-key-change-in-production
 ## Data Sources
 
 * **NYC TLC trip data:** High Volume For-Hire Vehicle (HVFHV) Parquet records representing taxi, Uber, and Lyft trips, obtained from the NYC Taxi and Limousine Commission.
-* **OpenStreetMap (OSM):** Road network graphs of New York City, downloaded using the OSMnx library.
+* **Zone Centroids:** Latitude/longitude centroids for NYC's 263 TLC taxi zones, used as pickup/dropoff reference points for ETA calculations.
 
 ---
 
