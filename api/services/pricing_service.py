@@ -1,25 +1,12 @@
-"""
-UrbanFlow -- Pricing Service
-
-Computes surge pricing multipliers based on predicted demand.
-Supports three pricing policies:
-    1. Flat    -- Always 1.0x (no surge, baseline)
-    2. Reactive -- Simple demand-threshold based scaling
-    3. Predictive -- Uses demand forecast + time-of-day adjustments
-
-Also provides SHAP-powered explanations for WHY the surge is what it is.
-"""
+# This file is mainly responsible for the calculation of the surge multiplier and demand level at a particular zone inside the NYC city. The surge multiplier is being decided by percentages of demands in the zone and also the hour of time in that particular zone. According to that the code adjusts the surge mutiplier and returns it along with the proper explanation behind it. Also according to the percentages of the demand it is being decided in this code file only that the demand in particular zone id critical, moderate, or low. At last an intelligent strategy of calculating the surge multiplier is being used to compare three strategies of pricing policy which are as follows: flat, reactive, and predictive. These are being used to compare surge pricing multiplier strategy. The compare_policies utility, along with its helper methods _reactive_surge and _predictive_surge, is an analytics tool that returns side-by-side pricing scenarios for internal dashboards, A/B test planning, or business intelligence. It does not override the main price it provides visibility into alternative strategies.
 
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 import config
 
 
 class PricingService:
-    """Computes surge pricing and provides pricing explanations."""
 
     def calculate_surge(
         self,
@@ -30,24 +17,9 @@ class PricingService:
         zone_name: str = "",
         borough: str = "",
     ) -> dict:
-        """
-        Calculate surge multiplier with breakdown of contributing factors.
-
-        Args:
-            demand: Predicted normalized demand [0-1]
-            hour: Hour of day
-            minute: Minute of hour (0, 15, 30, 45)
-            day_of_week: 0=Mon, 6=Sun
-            zone_name: For display purposes
-            borough: For display purposes
-
-        Returns:
-            Dict with surge_multiplier and factor breakdown
-        """
         factors = []
         surge = config.SURGE_BASE
 
-        # Factor 1: Base demand level
         if demand > 0.75:
             demand_add = 1.2
             factors.append({
@@ -78,7 +50,6 @@ class PricingService:
             })
         surge += demand_add
 
-        # Factor 2: Rush hour
         if hour in [7, 8, 9]:
             rush_add = 0.3
             factors.append({
@@ -96,7 +67,6 @@ class PricingService:
             })
             surge += rush_add
 
-        # Factor 3: Late night
         if hour in [0, 1, 2, 3, 4]:
             night_add = 0.2
             factors.append({
@@ -106,7 +76,6 @@ class PricingService:
             })
             surge += night_add
 
-        # Factor 4: Weekend nights
         if day_of_week in [4, 5] and hour in [21, 22, 23, 0, 1, 2]:
             weekend_add = 0.2
             factors.append({
@@ -116,7 +85,6 @@ class PricingService:
             })
             surge += weekend_add
 
-        # Cap at maximum
         surge = min(surge, config.SURGE_MAX)
 
         return {
@@ -126,7 +94,6 @@ class PricingService:
         }
 
     def _demand_level(self, demand: float) -> str:
-        """Classify demand into human-readable level."""
         if demand < 0.25:
             return "low"
         elif demand < 0.5:
@@ -136,7 +103,6 @@ class PricingService:
         return "critical"
 
     def compare_policies(self, demand: float, hour: int, minute: int = 0) -> dict:
-        """Compare pricing across different policies."""
         return {
             "flat": {"multiplier": 1.0, "policy": "Flat (no surge)"},
             "reactive": {
@@ -150,15 +116,12 @@ class PricingService:
         }
 
     def _reactive_surge(self, demand: float) -> float:
-        """Simple threshold-based reactive pricing."""
         if demand <= 0.5:
             return 1.0
         return 1.0 + (demand - 0.5) * 4.0  # max 3.0x at demand=1.0
 
     def _predictive_surge(self, demand: float, hour: int, minute: int = 0) -> float:
-        """Anticipatory pricing that accounts for upcoming demand patterns."""
         base = self._reactive_surge(demand)
-        # Anticipate upcoming rush: boost slightly in the hour before rush
         if hour in [6, 16] or (hour in [7, 17] and minute == 0):
             base += 0.15
         return min(base, config.SURGE_MAX)

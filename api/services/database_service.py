@@ -1,10 +1,4 @@
-"""
-UrbanFlow -- Database Service
-
-Phase 4 persistence layer. It initializes PostgreSQL tables, seeds zone
-metadata/statistics from the loaded demand service, and records prediction,
-pricing, and ETA activity for later analysis.
-"""
+# The DatabaseService is an async facade that handles PostgreSQL connection diagnostics with auto-healing credential discovery, schema initialization, and reference data seeding. It maintains an audit trail by asynchronously logging every prediction, pricing decision, and ETA estimate to their respective tables. All write operations gracefully skip if the database is unavailable, ensuring the API never crashes due to DB downtime. It also provides analytics queries — prediction aggregates, pricing history lookups, and ETA health metrics — that power the operations dashboard. The async SQLAlchemy pattern ensures database I/O never blocks the event loop.
 
 import sys
 from pathlib import Path
@@ -18,13 +12,10 @@ from db.models import ETALog, PredictionLog, PricingHistory, Zone, ZoneStat
 
 
 class DatabaseService:
-    """Async database facade used by API routes and startup."""
-
     def __init__(self):
         self.available = False
 
     async def diagnose_and_setup(self) -> None:
-        """Diagnose database connection and auto-heal/configure credentials."""
         import socket
         import asyncpg
         import urllib.parse
@@ -129,7 +120,6 @@ class DatabaseService:
                 database_manager.available = False
 
     async def initialize(self, demand_service) -> bool:
-        """Create schema and seed reference rows if PostgreSQL is reachable."""
         try:
             await self.diagnose_and_setup()
             await database_manager.create_schema()
@@ -152,7 +142,6 @@ class DatabaseService:
         self.available = False
 
     async def seed_reference_data(self, demand_service) -> None:
-        """Seed zone metadata and zone/time-slot statistics once."""
         if not self.available or not demand_service.zone_stats:
             return
 
@@ -200,7 +189,6 @@ class DatabaseService:
             await session.commit()
 
     async def log_prediction(self, request_type: str, req, result: dict) -> None:
-        """Record a demand prediction or heatmap summary."""
         if not self.available:
             return
         try:
@@ -225,7 +213,6 @@ class DatabaseService:
             print(f"[DatabaseService] Prediction log skipped: {exc}")
 
     async def log_pricing(self, req, result: dict) -> None:
-        """Record a pricing calculation."""
         if not self.available:
             return
         try:
@@ -247,7 +234,6 @@ class DatabaseService:
             print(f"[DatabaseService] Pricing log skipped: {exc}")
 
     async def log_eta(self, req, result: dict) -> None:
-        """Record an ETA estimate."""
         if not self.available:
             return
         try:
@@ -270,12 +256,7 @@ class DatabaseService:
         except Exception as exc:
             print(f"[DatabaseService] ETA log skipped: {exc}")
 
-    # ─────────────────────────────────────────────────────────────
-    # Analytics / Query Methods
-    # ─────────────────────────────────────────────────────────────
-
     async def get_prediction_stats(self) -> dict:
-        """Return aggregated prediction analytics from the database."""
         default = {
             "total_predictions": 0,
             "predictions_by_type": {},
@@ -352,7 +333,6 @@ class DatabaseService:
             return default
 
     async def get_pricing_history(self, zone_id: int, limit: int = 20) -> list[dict]:
-        """Return recent pricing history for a zone."""
         if not self.available:
             return []
         try:
@@ -385,7 +365,6 @@ class DatabaseService:
             return []
 
     async def get_eta_stats(self) -> dict:
-        """Return ETA usage statistics."""
         default = {
             "total_queries": 0,
             "popular_routes": [],

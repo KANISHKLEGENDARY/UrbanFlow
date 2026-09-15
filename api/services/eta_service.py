@@ -1,10 +1,4 @@
-"""
-UrbanFlow -- ETA Service
-
-Loads the Phase 3 ETA estimator and serves pickup/dropoff zone travel-time
-estimates. The service uses the cached OSMNX road graph when available and
-falls back to centroid-distance estimates when the graph has not been cached.
-"""
+# This file is responsibel for handing over the json report of the ETA calculation between the 2 zones which the user has requested for. This file calls the ZoneETAEstimator class instance which further takes the inputs of the of the zones and then runs the necessary function required for ETA calculation. The ZoneETAEstimator instance then returns the ETA report to this file. This file in turn sends that ETA report to the concerned routing file for displaying on the dashboard. This file initializes the estimator, which internally attempts to load the road graph and falls back to centroid-based estimation if unavailable.
 
 import sys
 from pathlib import Path
@@ -16,7 +10,6 @@ import config
 
 
 class ETAService:
-    """Singleton service for route ETA estimates."""
 
     def __init__(self):
         self.estimator = None
@@ -24,7 +17,6 @@ class ETAService:
         self.is_loaded = False
 
     def load(self, demand_service) -> bool:
-        """Load zone metadata and initialize the ETA estimator."""
         if not demand_service.zone_stats:
             self.is_loaded = False
             return False
@@ -47,7 +39,6 @@ class ETAService:
         minute: int,
         day_of_week: int,
     ) -> dict:
-        """Estimate ETA between two zones."""
         if not self.is_loaded or self.estimator is None:
             raise RuntimeError("ETA service not loaded.")
 
@@ -83,13 +74,11 @@ class ETAService:
         }
 
     def status(self) -> dict:
-        """Return ETA service status."""
         return {
             "loaded": self.is_loaded,
             "graph_available": bool(self.estimator and self.estimator.graph_available),
             "road_graph_path": str(config.ROAD_GRAPH_PATH),
             "zones_available": len(self.zone_meta),
         }
-
 
 eta_service = ETAService()

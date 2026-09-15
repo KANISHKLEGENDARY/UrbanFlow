@@ -45,9 +45,50 @@ async def register(req: AuthRegisterRequest):
     Returns access + refresh tokens on successful registration.
     """
     if not database_manager.available:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database unavailable — registration requires PostgreSQL",
+        # PostgreSQL is offline -- use JSON fallback database
+        import json
+        fallback_path = Path(config.DATA_DIR) / "users_fallback.json"
+        
+        users = {}
+        if fallback_path.exists():
+            try:
+                users = json.loads(fallback_path.read_text())
+            except Exception:
+                users = {}
+
+        # Check existing username or email
+        for uid, udata in users.items():
+            if udata["username"] == req.username:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with that username already exists",
+                )
+            if udata["email"] == req.email:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="A user with that email already exists",
+                )
+
+        # Create user
+        new_id = len(users) + 1
+        user_dict = {
+            "id": new_id,
+            "username": req.username,
+            "email": req.email,
+            "hashed_password": hash_password(req.password),
+            "is_active": True,
+            "is_admin": False,
+        }
+        users[str(new_id)] = user_dict
+        fallback_path.write_text(json.dumps(users, indent=2))
+
+        token_data = {"sub": req.username, "user_id": new_id, "email": req.email, "is_admin": False}
+        return AuthTokenResponse(
+            access_token=create_access_token(token_data),
+            refresh_token=create_refresh_token(token_data),
+            token_type="bearer",
+            username=req.username,
+            email=req.email,
         )
 
     async with database_manager.session() as session:
@@ -93,9 +134,48 @@ async def login(req: AuthLoginRequest):
     Accepts username and password. Returns access + refresh tokens.
     """
     if not database_manager.available:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database unavailable — login requires PostgreSQL",
+        # PostgreSQL is offline -- use JSON fallback database
+        import json
+        fallback_path = Path(config.DATA_DIR) / "users_fallback.json"
+        
+        users = {}
+        if fallback_path.exists():
+            try:
+                users = json.loads(fallback_path.read_text())
+            except Exception:
+                users = {}
+
+        # Find user
+        user = None
+        for uid, udata in users.items():
+            if udata["username"] == req.username:
+                user = udata
+                break
+
+        if user is None or not verify_password(req.password, user["hashed_password"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect username or password",
+            )
+
+        if not user["is_active"]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deactivated",
+            )
+
+        token_data = {
+            "sub": user["username"],
+            "user_id": user["id"],
+            "email": user["email"],
+            "is_admin": user["is_admin"],
+        }
+        return AuthTokenResponse(
+            access_token=create_access_token(token_data),
+            refresh_token=create_refresh_token(token_data),
+            token_type="bearer",
+            username=user["username"],
+            email=user["email"],
         )
 
     async with database_manager.session() as session:

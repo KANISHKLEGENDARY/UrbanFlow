@@ -26,7 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 
-from api.routes import demand, pricing, explain, eta
+from api.routes import demand, pricing, explain, eta, multimodal, simulation, congestion
 from api.auth import routes as auth_routes
 from api.services.demand_service import demand_service
 from api.services.database_service import database_service
@@ -90,6 +90,9 @@ app.include_router(pricing.router)
 app.include_router(explain.router)
 app.include_router(eta.router)
 app.include_router(auth_routes.router)
+app.include_router(multimodal.router)
+app.include_router(simulation.router)
+app.include_router(congestion.router)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])

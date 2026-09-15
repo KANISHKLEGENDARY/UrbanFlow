@@ -1,11 +1,4 @@
-"""
-UrbanFlow -- Demand Prediction API Routes
-
-Endpoints:
-    POST /api/v1/demand/predict     -- Predict demand for a specific zone + time
-    POST /api/v1/demand/heatmap     -- Get demand for ALL 263 zones (for the map)
-    GET  /api/v1/demand/zones       -- List all available zones with metadata
-"""
+# This file is responsible for transferring the predicitions from backend to frontend. The requests made by frintend are entertained in this file and different functions are responsible for making sure that those requests get completed. The first function gets the status of overall dataset i.e which zone is the busiest, how much demand is there etc. The data comes in the form of a json object and then is automatically parsed into python pydantic object. That pydantic object is then sent further for making predictions and a json object in turn is returned in the response for the particular request. This file also handles the request for the predictions and data of a particular place in NYC selected by user and also for the display of heatmap on the dashboard telling the percentages of predictions zone by zone. The predictions are also logged in the database for future use and analysis.The heatmap is displayed in the form of color and the prediction done by the model in each zone is multiplied by 4000 to get the actual prediction value. The prediction and heatmap endpoints are protected by JWT authentication via FastAPI dependency injection, ensuring only logged-in users can access demand forecasts. Explicit error handling guardrails are also setup in this file to return errors in something wents wrong. 
 
 import sys
 from pathlib import Path
@@ -27,22 +20,12 @@ router = APIRouter(prefix="/api/v1/demand", tags=["Demand Prediction"])
 
 @router.get("/stats", response_model=PredictionStatsResponse)
 async def get_prediction_stats():
-    """Return prediction analytics from the database.
-
-    Aggregates total prediction count, breakdown by type, top queried zones,
-    average demand, and hourly distribution.
-    """
     stats = await database_service.get_prediction_stats()
     return PredictionStatsResponse(**stats)
 
 
 @router.post("/predict", response_model=DemandResponse)
 async def predict_demand(req: DemandRequest, _user: dict = Depends(get_current_user)):
-    """
-    Predict ride demand for a specific zone at a specific time.
-
-    Example: "What's the demand at zone 161 (Midtown) at 5 PM on a Tuesday?"
-    """
     if not demand_service.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
@@ -63,10 +46,6 @@ async def predict_demand(req: DemandRequest, _user: dict = Depends(get_current_u
 
 @router.post("/heatmap", response_model=HeatmapResponse)
 async def get_heatmap(req: HeatmapRequest, _user: dict = Depends(get_current_user)):
-    """
-    Get demand predictions for ALL zones at a given time.
-    Used by the frontend to render the demand heatmap on the map.
-    """
     if not demand_service.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
@@ -100,7 +79,6 @@ async def get_heatmap(req: HeatmapRequest, _user: dict = Depends(get_current_use
 
 @router.get("/zones")
 async def list_zones():
-    """List all available NYC taxi zones with metadata."""
     if not demand_service.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
     return {"zones": demand_service.get_zone_list()}

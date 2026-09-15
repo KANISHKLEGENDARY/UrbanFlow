@@ -1,0 +1,36 @@
+# Dependencies & environments
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# Build artifacts
+frontend/dist/
+frontend/node_modules/
+*.egg-info/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+docker-compose.yml
+Dockerfile
+frontend/Dockerfile
+
+# Monitoring data (not code)
+monitoring/grafana/*.db
+
+# Documentation
+*.md
+LICENSE

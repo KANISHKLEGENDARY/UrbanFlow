@@ -1,0 +1,23 @@
+# Environments & Cache
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+cache/
+db_diagnostic.txt
+
+# Datasets
+*.parquet
+data/processed/
+data/raw/*.graphml
+
+# Model outputs & serialized binaries
+outputs/models/
+outputs/shap/
+outputs/reports/
+
+# Node dependencies & builds
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache

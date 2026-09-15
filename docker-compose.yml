@@ -1,0 +1,115 @@
+# ─────────────────────────────────────────────────────────────────
+# UrbanFlow — Docker Compose
+#
+# Full-stack orchestration:
+#   - api         : FastAPI backend (Python 3.11)
+#   - frontend    : React/Vite frontend (nginx)
+#   - db          : PostgreSQL 16 database
+#   - prometheus  : Metrics collection
+#   - grafana     : Metrics visualization
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose up api db      # Start API + DB only
+#   docker compose logs -f api    # Follow API logs
+#   docker compose down -v        # Stop and remove volumes
+# ─────────────────────────────────────────────────────────────────
+
+services:
+  # ── PostgreSQL Database ─────────────────────
+  db:
+    image: postgres:16-alpine
+    container_name: urbanflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-urbanflow}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI Backend ─────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: urbanflow-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/urbanflow}
+      DATABASE_ENABLED: ${DATABASE_ENABLED:-true}
+      SECRET_KEY: ${SECRET_KEY:-urbanflow-dev-secret-change-in-production}
+      AUTH_ENABLED: ${AUTH_ENABLED:-true}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Mount outputs for live model updates without rebuilding
+      - ./outputs:/app/outputs:ro
+
+  # ── React Frontend ─────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8000}
+    container_name: urbanflow-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+
+  # ── Prometheus ──────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: urbanflow-prometheus
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+
+  # ── Grafana ─────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: urbanflow-grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-urbanflow}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+
+volumes:
+  pgdata:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local

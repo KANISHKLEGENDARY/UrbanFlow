@@ -1,10 +1,4 @@
-"""
-UrbanFlow -- Surge Pricing API Routes
-
-Endpoints:
-    POST /api/v1/pricing/calculate  -- Calculate surge pricing for a trip
-    POST /api/v1/pricing/compare    -- Compare pricing policies side by side
-"""
+# This file is responsible for the surge pricing calculations. It takes the request from the frontend and calculates the surge pricing based on the demand prediction. It also logs the pricing in the database for future use. It also handles the request for the history of pricing for a particular zone. The requests made by frontend are entertained in this file and different functions are responsible for making sure that those requests get completed. The first function gets the history of pricing for a particular zone. The second function calculates the surge pricing for a trip. Explicit error handling guardrails are also setup in this file to return errors if something wents wrong. 
 
 import sys
 from pathlib import Path
@@ -26,27 +20,20 @@ async def get_pricing_history(
     zone_id: int,
     limit: int = Query(20, ge=1, le=100, description="Max records to return"),
 ):
-    """Return recent pricing history for a zone.
-
-    Returns up to `limit` most recent pricing calculations for the specified
-    zone, ordered newest first.
-    """
+    # This function is responsible for bringing some historical prices of a particular zone from the database. Some limits are being setup to ensure the request made by the user lies within certain range otherwise the API won't work.
+    
     history = await database_service.get_pricing_history(zone_id=zone_id, limit=limit)
     return [PricingHistoryItem(**item) for item in history]
 
 
 @router.post("/calculate", response_model=PricingResponse)
 async def calculate_pricing(req: PricingRequest, _user: dict = Depends(get_current_user)):
-    """
-    Calculate surge pricing for a trip with explainable breakdown.
 
-    Returns the surge multiplier AND the factors contributing to it,
-    so users understand WHY the price is what it is.
-    """
+    # Responsible for calculating surge pricing for a trip with explainable breakdown. Returns the surge multiplier AND the factors contributing to it, so users understand WHY the price is what it is.
+
     if not demand_service.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
-    # Get demand prediction first
     prediction = demand_service.predict_zone(
         zone_id=req.zone_id,
         hour=req.hour,
@@ -56,7 +43,6 @@ async def calculate_pricing(req: PricingRequest, _user: dict = Depends(get_curre
         month=req.month,
     )
 
-    # Calculate surge with explanation
     pricing = pricing_service.calculate_surge(
         demand=prediction["predicted_demand"],
         hour=req.hour,
@@ -80,10 +66,9 @@ async def calculate_pricing(req: PricingRequest, _user: dict = Depends(get_curre
 
 @router.post("/compare")
 async def compare_policies(req: PricingRequest, _user: dict = Depends(get_current_user)):
-    """
-    Compare all three pricing policies for the same scenario.
-    Useful for the dashboard to show policy trade-offs.
-    """
+
+    # It compares all three pricing policies for the same scenario. It is useful for the dashboard to show policy trade-offs.
+
     if not demand_service.is_loaded:
         raise HTTPException(status_code=503, detail="Models not loaded yet")
 
@@ -102,7 +87,6 @@ async def compare_policies(req: PricingRequest, _user: dict = Depends(get_curren
         minute=req.minute,
     )
 
-    # Add adjusted fares
     for key in policies:
         policies[key]["adjusted_fare"] = round(
             req.base_fare * policies[key]["multiplier"], 2
