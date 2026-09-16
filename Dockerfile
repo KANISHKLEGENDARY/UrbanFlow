@@ -56,8 +56,9 @@ COPY ml/ ml/
 COPY data/ data/
 COPY alembic.ini .
 
-# Create output directories (models must be committed via Git LFS to be available)
-RUN mkdir -p outputs/models outputs/shap outputs/reports
+# Copy trained model artifacts (tracked via Git LFS)
+COPY outputs/models/ outputs/models/
+RUN mkdir -p outputs/shap outputs/reports
 
 # Expose API port
 EXPOSE 8000
