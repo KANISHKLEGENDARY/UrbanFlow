@@ -36,11 +36,16 @@ class DemandService:
             if config.ZONE_LOOKUP_PATH.exists():
                 self.zone_lookup = pd.read_csv(config.ZONE_LOOKUP_PATH)
 
-            train_path = config.PROCESSED_DIR / "train.parquet"
-            if train_path.exists():
-                train_df = pd.read_parquet(train_path)
-                self.zone_stats = self._compute_zone_stats(train_df)
-                self._train_df = train_df
+            zone_stats_path = config.MODEL_DIR / "zone_stats.pkl"
+            if zone_stats_path.exists():
+                self.zone_stats = joblib.load(zone_stats_path)
+            else:
+                train_path = config.PROCESSED_DIR / "train.parquet"
+                if train_path.exists():
+                    train_df = pd.read_parquet(train_path)
+                    self.zone_stats = self._compute_zone_stats(train_df)
+                    self._train_df = train_df
+                    joblib.dump(self.zone_stats, zone_stats_path)
 
             self.is_loaded = True
             print("[DemandService] Models loaded successfully")
