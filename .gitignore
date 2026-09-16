@@ -12,8 +12,7 @@ db_diagnostic.txt
 data/processed/
 data/raw/*.graphml
 
-# Model outputs & serialized binaries
-outputs/models/
+# Model outputs & serialized binaries (models tracked via Git LFS)
 outputs/shap/
 outputs/reports/
 
