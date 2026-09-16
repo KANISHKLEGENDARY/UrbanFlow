@@ -42,7 +42,8 @@ async def lifespan(app: FastAPI):
     print("\n[UrbanFlow] Loading ML models...")
     success = demand_service.load_models()
     if success:
-        zones = len(demand_service.zone_stats.get("zone_meta", {}))
+        zone_stats = demand_service.zone_stats or {}
+        zones = len(zone_stats.get("zone_meta", {}))
         eta_service.load(demand_service)
         print(f"[UrbanFlow] Ready! {zones} zones available")
     else:
