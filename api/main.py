@@ -44,14 +44,17 @@ async def lifespan(app: FastAPI):
     if success:
         zones = len(demand_service.zone_stats.get("zone_meta", {}))
         eta_service.load(demand_service)
-        await database_service.initialize(demand_service)
         print(f"[UrbanFlow] Ready! {zones} zones available")
-        if config.AUTH_ENABLED:
-            print("[UrbanFlow] JWT authentication is ENABLED")
-        else:
-            print("[UrbanFlow] JWT authentication is DISABLED (development mode)")
     else:
         print("[UrbanFlow] WARNING: Models not loaded. Run 'python ml/train.py' first.")
+
+    # Always initialize DB regardless of model loading status
+    await database_service.initialize(demand_service)
+
+    if config.AUTH_ENABLED:
+        print("[UrbanFlow] JWT authentication is ENABLED")
+    else:
+        print("[UrbanFlow] JWT authentication is DISABLED (development mode)")
     yield
     await database_service.shutdown()
     print("[UrbanFlow] Shutting down...")
