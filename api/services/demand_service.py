@@ -29,9 +29,8 @@ class DemandService:
 
             self._validate_model_feature_counts()
 
-            shap_path = config.MODEL_DIR / "shap_explainer.pkl"
-            if shap_path.exists():
-                self.shap_explainer = joblib.load(shap_path)
+            # NOTE: shap_explainer is NOT loaded at startup to save RAM on free tier.
+            # It is lazy-loaded on first call to get_shap_explainer().
 
             if config.ZONE_LOOKUP_PATH.exists():
                 self.zone_lookup = pd.read_csv(config.ZONE_LOOKUP_PATH)
@@ -60,6 +59,15 @@ class DemandService:
             print("[DemandService] Run 'python ml/train.py' to create Phase 2 model artifacts.")
             self.is_loaded = False
             return False
+
+    def get_shap_explainer(self):
+        """Lazy-load SHAP explainer only when needed to save RAM on startup."""
+        if self.shap_explainer is None:
+            shap_path = config.MODEL_DIR / "shap_explainer.pkl"
+            if shap_path.exists():
+                print("[DemandService] Lazy-loading SHAP explainer...")
+                self.shap_explainer = joblib.load(shap_path)
+        return self.shap_explainer
 
     def _validate_model_feature_counts(self) -> None:
         expected = len(config.ALL_FEATURES)
